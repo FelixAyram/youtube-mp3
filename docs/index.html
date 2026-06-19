@@ -158,12 +158,23 @@
       padding: 12px;
     }
 
-    .note {
-      font-size: 0.8rem;
-      color: var(--muted);
-      line-height: 1.55;
-      margin-top: 12px;
+    .note.warn {
+      padding: 12px 14px;
+      background: rgba(255, 0, 51, 0.08);
+      border: 1px solid rgba(255, 0, 51, 0.25);
+      border-radius: 10px;
+      color: #ffb4b4;
     }
+
+    .note code {
+      background: #111;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+    }
+
+    .note ol { margin: 8px 0 0 18px; }
+    .note li { margin-bottom: 5px; }
 
     footer {
       margin-top: 24px;
@@ -242,6 +253,21 @@
         Al hacer clic se abre GitHub para confirmar la descarga. GitHub procesa todo en la nube
         y te avisa por comentario cuando el ZIP esté listo.
       </p>
+    </section>
+
+    <section class="card">
+      <h2>Configuración única (importante)</h2>
+      <p class="note warn">
+        YouTube bloquea los servidores de GitHub. Para que funcione, configurá cookies <strong>una sola vez</strong>:
+      </p>
+      <ol class="note" style="margin-top:10px">
+        <li>Extension Chrome: <strong>Get cookies.txt LOCALLY</strong></li>
+        <li>Entrá a youtube.com (logueado) → exportá cookies</li>
+        <li>PowerShell: <code>[Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt"))</code></li>
+        <li><a href="https://github.com/FelixAyram/youtube-mp3/settings/secrets/actions" target="_blank" rel="noopener" style="color:#3dd68c">GitHub → Settings → Secrets → Actions</a></li>
+        <li>Nuevo secret: <code>YOUTUBE_COOKIES</code> → pegá el base64</li>
+      </ol>
+      <p class="note" style="margin-top:10px">Usá una cuenta de Google secundaria. Las cookies caducan cada ~2 semanas.</p>
     </section>
 
     <footer>Los archivos se guardan 7 días como artefacto de GitHub Actions</footer>

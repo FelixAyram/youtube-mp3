@@ -57,46 +57,90 @@ jobs:
             exit 1
           fi
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Instalar dependencias
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          pip install yt-dlp
+          pip install --upgrade pip
+          pip install --upgrade yt-dlp
+
+      - name: Configurar cookies de YouTube
+        id: cookies
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            echo "$YOUTUBE_COOKIES" | base64 -d > cookies.txt
+            if [ -s cookies.txt ]; then
+              echo "has_cookies=true" >> "$GITHUB_OUTPUT"
+              echo "Cookies configuradas"
+            else
+              echo "has_cookies=false" >> "$GITHUB_OUTPUT"
+              echo "Secret YOUTUBE_COOKIES invalido"
+            fi
+          else
+            echo "has_cookies=false" >> "$GITHUB_OUTPUT"
+            echo "Sin secret YOUTUBE_COOKIES — YouTube suele bloquear IPs de GitHub"
+          fi
 
       - name: Descargar playlist
+        id: download
         run: |
-          mkdir -p output
+          mkdir -p output logs
+          COOKIE_ARG=""
+          if [ "${{ steps.cookies.outputs.has_cookies }}" = "true" ]; then
+            COOKIE_ARG="--cookies cookies.txt"
+          fi
+
+          set +e
           yt-dlp \
+            $COOKIE_ARG \
             --ignore-errors \
             --no-overwrites \
             --embed-metadata \
             --embed-thumbnail \
             --convert-thumbnails jpg \
+            --extractor-args "youtube:player_client=android,web,tv_embedded" \
+            --sleep-requests 1 \
+            --sleep-interval 2 \
+            --max-sleep-interval 5 \
             -x --audio-format "${{ steps.meta.outputs.format }}" --audio-quality 0 \
             --postprocessor-args "ffmpeg:-c:v mjpeg -disposition:v:0 attached_pic" \
             -o "output/%(playlist_index)03d - %(title)s.%(ext)s" \
-            "${{ steps.meta.outputs.url }}"
+            "${{ steps.meta.outputs.url }}" 2>&1 | tee logs/yt-dlp.log
+          YTDLP_EXIT=${PIPESTATUS[0]}
+          set -e
 
-      - name: Empaquetar
-        run: |
-          cd output
-          COUNT=$(find . -type f | wc -l)
+          COUNT=$(find output -type f 2>/dev/null | wc -l)
           echo "files=$COUNT" >> "$GITHUB_ENV"
+          echo "ytdlp_exit=$YTDLP_EXIT" >> "$GITHUB_ENV"
+
           if [ "$COUNT" -eq 0 ]; then
-            echo "No se descargo ningun archivo"
+            echo "download_ok=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
+          echo "download_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Empaquetar
+        if: steps.download.outputs.download_ok == 'true'
+        run: |
+          cd output
           zip -r ../playlist.zip .
 
       - name: Subir artefacto
+        if: steps.download.outputs.download_ok == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playlist-${{ steps.meta.outputs.format }}-${{ github.run_number }}
           path: playlist.zip
           retention-days: 7
 
-      - name: Comentar en el issue
-        if: steps.meta.outputs.issue_number != ''
+      - name: Comentar exito en el issue
+        if: steps.meta.outputs.issue_number != '' && steps.download.outputs.download_ok == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -107,12 +151,46 @@ jobs:
               `Archivos: ${process.env.files}`,
               `Formato: ${{ steps.meta.outputs.format }}`,
               '',
-              `📦 **Descargá el ZIP** desde este run de Actions:`,
+              `📦 **Descargá el ZIP** desde este run:`,
               runUrl,
               '',
-              'En la pagina del run, bajá hasta **Artifacts** y descargá el archivo `.zip`.',
+              'En la pagina del run → **Artifacts** → descargá el `.zip`.',
               '',
-              '_El archivo se elimina automaticamente en 7 dias._'
+              '_Disponible 7 dias._'
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.meta.outputs.issue_number }},
+              body
+            });
+
+      - name: Comentar error en el issue
+        if: failure() && steps.meta.outputs.issue_number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const hasCookies = '${{ steps.cookies.outputs.has_cookies }}' === 'true';
+            const body = [
+              '❌ **La descarga falló**',
+              '',
+              hasCookies
+                ? 'YouTube bloqueó la descarga aun con cookies. Probá actualizar el secret `YOUTUBE_COOKIES` (caducan cada pocos dias).'
+                : '**YouTube bloquea los servidores de GitHub** sin cookies de sesión.',
+              '',
+              '### Configurá cookies (una sola vez):',
+              '1. Instalá la extension **Get cookies.txt LOCALLY** en Chrome/Edge',
+              '2. Entrá a youtube.com logueado',
+              '3. Exportá cookies → archivo `cookies.txt`',
+              '4. En PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt"))`',
+              '5. GitHub → repo **youtube-mp3** → Settings → Secrets → Actions',
+              '6. Nuevo secret: `YOUTUBE_COOKIES` → pegá el texto base64',
+              '7. Volvé a descargar',
+              '',
+              `Log del run: ${runUrl}`,
+              '',
+              '_Usá una cuenta secundaria de Google, no la principal._'
             ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -122,7 +200,7 @@ jobs:
             });
 
       - name: Cerrar issue
-        if: steps.meta.outputs.issue_number != '' && success()
+        if: steps.meta.outputs.issue_number != '' && steps.download.outputs.download_ok == 'true'
         uses: actions/github-script@v7
         with:
           script: |
