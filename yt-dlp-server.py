@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -17,6 +18,8 @@ HOST = "127.0.0.1"
 PORT = 7831
 DOWNLOADS_DIR = Path.home() / "Downloads" / "YouTube Playlists"
 BROWSER_COOKIES = ("chrome", "edge", "firefox", "brave", "opera")
+AUDIO_FORMATS = {"mp3", "m4a", "opus", "flac", "wav"}
+VIDEO_FORMATS = {"mp4", "webm"}
 
 jobs: dict[str, dict] = {}
 
@@ -25,18 +28,36 @@ def yt_dlp_cmd(args: list[str]) -> list[str]:
     return [sys.executable, "-m", "yt_dlp", *args]
 
 
-def run_yt_dlp(job_id: str, playlist_url: str, fmt: str) -> None:
-    job = jobs[job_id]
-    job["state"] = "running"
-    job["message"] = "Iniciando yt-dlp..."
+def has_ffmpeg() -> bool:
+    try:
+        subprocess.run(
+            ["ffmpeg", "-version"],
+            capture_output=True,
+            check=True,
+        )
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
 
-    output_dir = DOWNLOADS_DIR / job_id[:8]
-    output_dir.mkdir(parents=True, exist_ok=True)
-    job["outputDir"] = str(output_dir)
 
-    output_template = str(output_dir / "%(playlist_index)03d - %(title)s.%(ext)s")
+def count_files(output_dir: Path, ext: str) -> int:
+    return len(list(output_dir.glob(f"*.{ext}")))
 
-    base_args = [
+
+def cleanup_sidecars(output_dir: Path, keep_ext: str) -> None:
+    """Quita webm/webp sueltos cuando ya hay archivos finales."""
+    if count_files(output_dir, keep_ext) == 0:
+        return
+    for pattern in ("*.webm", "*.webp", "*.m4a.part", "*.mp3.part"):
+        for path in output_dir.glob(pattern):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def build_yt_dlp_args(playlist_url: str, output_template: str, fmt: str) -> list[str]:
+    common = [
         "--ignore-errors",
         "--no-overwrites",
         "--embed-metadata",
@@ -47,31 +68,69 @@ def run_yt_dlp(job_id: str, playlist_url: str, fmt: str) -> None:
         "%(uploader|)s:%(meta_artist)s",
         "--parse-metadata",
         "%(playlist_title|)s:%(meta_album)s",
-        "-o",
-        output_template,
-        playlist_url,
     ]
 
-    if fmt in {"mp3", "m4a", "opus", "flac", "wav"}:
-        base_args.extend(["-x", "--audio-format", fmt, "--audio-quality", "0"])
+    if fmt in AUDIO_FORMATS:
+        common.extend(
+            [
+                "-f",
+                "ba/b",
+                "-x",
+                "--audio-format",
+                fmt,
+                "--audio-quality",
+                "0",
+            ]
+        )
         if fmt == "mp3":
-            base_args.extend(
+            common.extend(
                 [
                     "--postprocessor-args",
                     "ffmpeg:-c:v mjpeg -disposition:v:0 attached_pic",
                 ]
             )
-    elif fmt in {"mp4", "webm"}:
-        base_args.extend(["--merge-output-format", fmt])
+    elif fmt in VIDEO_FORMATS:
+        common.extend(["--merge-output-format", fmt])
     else:
+        raise ValueError(f"Formato no soportado: {fmt}")
+
+    common.extend(["-o", output_template, playlist_url])
+    return common
+
+
+def run_yt_dlp(job_id: str, playlist_url: str, fmt: str) -> None:
+    job = jobs[job_id]
+    job["state"] = "running"
+    job["message"] = "Iniciando yt-dlp..."
+
+    if fmt in AUDIO_FORMATS and not has_ffmpeg():
         job["state"] = "error"
-        job["error"] = f"Formato no soportado: {fmt}"
+        job["error"] = (
+            "ffmpeg no está instalado. Sin ffmpeg no hay MP3 ni portada embebida. "
+            "Instalá: winget install Gyan.FFmpeg"
+        )
+        return
+
+    output_dir = DOWNLOADS_DIR / job_id[:8]
+    if output_dir.exists():
+        shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    job["outputDir"] = str(output_dir)
+
+    output_template = str(output_dir / "%(playlist_index)03d - %(title)s.%(ext)s")
+
+    try:
+        base_args = build_yt_dlp_args(playlist_url, output_template, fmt)
+    except ValueError as exc:
+        job["state"] = "error"
+        job["error"] = str(exc)
         return
 
     last_error = ""
     for browser in BROWSER_COOKIES:
         cmd = yt_dlp_cmd([*base_args, "--cookies-from-browser", browser])
         job["log"] = " ".join(cmd)
+        job["message"] = f"Descargando con cookies de {browser}…"
         try:
             proc = subprocess.run(
                 cmd,
@@ -80,27 +139,49 @@ def run_yt_dlp(job_id: str, playlist_url: str, fmt: str) -> None:
                 encoding="utf-8",
                 errors="replace",
             )
-            files = list(output_dir.glob("*"))
-            job["files"] = len(files)
-            job["log"] = (proc.stdout or "")[-2000:] + (proc.stderr or "")[-2000:]
+            log_tail = ((proc.stdout or "") + (proc.stderr or ""))[-3000:]
+            job["log"] = log_tail
 
+            if fmt in AUDIO_FORMATS:
+                final_count = count_files(output_dir, fmt)
+                cleanup_sidecars(output_dir, fmt)
+                job["files"] = count_files(output_dir, fmt)
+
+                if final_count == 0:
+                    last_error = (
+                        f"No se generó ningún .{fmt}. "
+                        "¿ffmpeg instalado y en PATH? Revisá el log."
+                    )
+                    if "ffmpeg" in log_tail.lower():
+                        last_error = "ffmpeg no encontrado o falló la conversión a " + fmt
+                    continue
+
+                job["state"] = "done"
+                job["message"] = (
+                    f"Listo: {job['files']} archivo(s) .{fmt} con portada "
+                    f"(cookies: {browser})"
+                )
+                return
+
+            files = [p for p in output_dir.iterdir() if p.is_file()]
+            job["files"] = len(files)
             if proc.returncode == 0 or files:
                 job["state"] = "done"
                 job["message"] = f"Listo: {len(files)} archivos (cookies: {browser})"
                 return
 
-            last_error = proc.stderr.strip() or proc.stdout.strip() or "yt-dlp fallo"
+            last_error = proc.stderr.strip() or proc.stdout.strip() or "yt-dlp falló"
             if "could not find" in last_error.lower():
                 continue
         except FileNotFoundError:
             job["state"] = "error"
-            job["error"] = "Instala yt-dlp: pip install yt-dlp (y ffmpeg en PATH)"
+            job["error"] = "Instala yt-dlp: pip install yt-dlp"
             return
         except Exception as exc:
             last_error = str(exc)
 
     job["state"] = "error"
-    job["error"] = last_error or "yt-dlp fallo con todos los navegadores"
+    job["error"] = last_error or "yt-dlp falló con todos los navegadores"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -130,7 +211,14 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
 
         if path == "/health":
-            self._json(200, {"ok": True})
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "ffmpeg": has_ffmpeg(),
+                    "version": "2.1",
+                },
+            )
             return
 
         if path.startswith("/status/"):
@@ -188,6 +276,8 @@ def main() -> None:
     server = HTTPServer((HOST, PORT), Handler)
     print(f"Servidor yt-dlp en http://{HOST}:{PORT}")
     print(f"Descargas en: {DOWNLOADS_DIR}")
+    if not has_ffmpeg():
+        print("[AVISO] ffmpeg no está en PATH — MP3 y portadas NO funcionarán.")
     print("Deja esta ventana abierta mientras uses el script de Tampermonkey.")
     print("Ctrl+C para detener.")
     try:
