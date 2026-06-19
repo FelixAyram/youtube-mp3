@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Playlist Downloader (con portada)
 // @namespace    https://github.com/local/youtube-playlist-downloader
-// @version      2.5.2
+// @version      2.5.3
 // @description  Elegí formato, arranca el servidor local y descarga con progreso.
 // @author       You
 // @match        https://www.youtube.com/*
@@ -993,7 +993,7 @@
         const health = JSON.parse(res.responseText);
         if (!health.ffmpeg) {
             throw new Error(
-                'ffmpeg no está instalado. Instalá: winget install Gyan.FFmpeg — después cerrá y volvé a abrir la terminal o reiniciá el PC.'
+                'ffmpeg no detectado. Si ya lo instalaste: doble clic en iniciar-servidor.bat (reinicia el servidor). Si no: winget install Gyan.FFmpeg'
             );
         }
         return health;

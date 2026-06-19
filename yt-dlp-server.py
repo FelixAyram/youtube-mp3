@@ -28,34 +28,65 @@ def yt_dlp_cmd(args: list[str]) -> list[str]:
     return [sys.executable, "-m", "yt_dlp", *args]
 
 
-def ffmpeg_candidates() -> list[str]:
-    names = ["ffmpeg"]
+_ffmpeg_bin: Path | None = None
+_ffmpeg_checked = False
+
+
+def resolve_ffmpeg_bin() -> Path | None:
+    global _ffmpeg_bin, _ffmpeg_checked
+    if _ffmpeg_checked:
+        return _ffmpeg_bin
+    _ffmpeg_checked = True
+
+    candidates: list[Path] = []
+    which = shutil.which("ffmpeg")
+    if which:
+        candidates.append(Path(which))
+
     if sys.platform == "win32":
-        local = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Links"
-        names.extend(
-            str(p)
-            for p in (
-                local / "ffmpeg.exe",
-                Path(r"C:\ffmpeg\bin\ffmpeg.exe"),
-                Path(r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"),
-            )
-            if p.exists()
-        )
-    return names
+        winget = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet"
+        for path in (
+            winget / "Links" / "ffmpeg.exe",
+            Path(r"C:\ffmpeg\bin\ffmpeg.exe"),
+            Path(r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"),
+        ):
+            if path.exists():
+                candidates.append(path)
 
+        packages = winget / "Packages"
+        if packages.is_dir():
+            for exe in packages.glob("Gyan.FFmpeg*/**/bin/ffmpeg.exe"):
+                candidates.append(exe)
 
-def has_ffmpeg() -> bool:
-    for cmd in ffmpeg_candidates():
+    seen: set[Path] = set()
+    for exe in candidates:
+        exe = exe.resolve()
+        if exe in seen:
+            continue
+        seen.add(exe)
         try:
             subprocess.run(
-                [cmd, "-version"],
+                [str(exe), "-version"],
                 capture_output=True,
                 check=True,
             )
-            return True
+            _ffmpeg_bin = exe
+            return _ffmpeg_bin
         except (FileNotFoundError, subprocess.CalledProcessError, OSError):
             continue
-    return False
+
+    return None
+
+
+def has_ffmpeg() -> bool:
+    return resolve_ffmpeg_bin() is not None
+
+
+def ffmpeg_location_args() -> list[str]:
+    exe = resolve_ffmpeg_bin()
+    if exe:
+        return ["--ffmpeg-location", str(exe.parent)]
+    return []
 
 
 def count_files(output_dir: Path, ext: str) -> int:
@@ -76,6 +107,7 @@ def cleanup_sidecars(output_dir: Path, keep_ext: str) -> None:
 
 def build_yt_dlp_args(playlist_url: str, output_template: str, fmt: str) -> list[str]:
     common = [
+        *ffmpeg_location_args(),
         "--ignore-errors",
         "--no-overwrites",
         "--embed-metadata",
@@ -234,7 +266,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "ffmpeg": has_ffmpeg(),
-                    "version": "2.1",
+                    "version": "2.2",
                 },
             )
             return
@@ -294,7 +326,9 @@ def main() -> None:
     server = HTTPServer((HOST, PORT), Handler)
     print(f"Servidor yt-dlp en http://{HOST}:{PORT}")
     print(f"Descargas en: {DOWNLOADS_DIR}")
-    if not has_ffmpeg():
+    if resolve_ffmpeg_bin():
+        print(f"ffmpeg: {resolve_ffmpeg_bin()}")
+    elif not has_ffmpeg():
         print("[AVISO] ffmpeg no está en PATH — MP3 y portadas NO funcionarán.")
     print("Deja esta ventana abierta mientras uses el script de Tampermonkey.")
     print("Ctrl+C para detener.")
