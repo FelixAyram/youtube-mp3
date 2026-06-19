@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Playlist Downloader (con portada)
 // @namespace    https://github.com/local/youtube-playlist-downloader
-// @version      2.3.0
-// @description  Un clic: descarga la playlist en MP3 con portada, directo en YouTube.
+// @version      2.4.0
+// @description  Un clic: arranca el servidor local y descarga la playlist en MP3.
 // @author       You
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -18,6 +18,8 @@
 // @connect      i.ytimg.com
 // @connect      cdn.jsdelivr.net
 // @connect      cipher.kikkia.dev
+// @connect      127.0.0.1
+// @connect      localhost
 // @connect      *
 // @run-at       document-idle
 // ==/UserScript==
@@ -27,6 +29,8 @@
 
     const API_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
     const CIPHER_API = 'https://cipher.kikkia.dev';
+    const LOCAL_SERVER = 'http://127.0.0.1:7831';
+    const LAUNCH_PROTOCOL = 'ypldl-start://run';
     const FORMATS = [
         { id: 'mp3', label: 'MP3 (audio, recomendado)', type: 'audio', ext: 'mp3' },
         { id: 'm4a', label: 'M4A / AAC (audio nativo)', type: 'audio', ext: 'm4a' },
@@ -1002,6 +1006,69 @@
         };
     }
 
+    async function isServerUp() {
+        try {
+            await gmFetch(`${LOCAL_SERVER}/health`);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    async function ensureServer(setProgress) {
+        if (await isServerUp()) return;
+
+        setProgress('Arrancando servidor local…');
+        const launcher = document.createElement('iframe');
+        launcher.style.display = 'none';
+        launcher.src = LAUNCH_PROTOCOL;
+        document.body.appendChild(launcher);
+        setTimeout(() => launcher.remove(), 3000);
+
+        for (let i = 0; i < 20; i++) {
+            await sleep(1500);
+            if (await isServerUp()) {
+                setProgress('Servidor listo.');
+                return;
+            }
+        }
+
+        throw new Error(
+            'No pudo iniciar el servidor. Ejecutá una sola vez: instalar-un-clic.bat'
+        );
+    }
+
+    async function downloadViaLocalServer(setProgress) {
+        await ensureServer(setProgress);
+        setProgress('Enviando playlist…');
+
+        const res = await gmFetch(`${LOCAL_SERVER}/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: location.href, format: 'mp3' }),
+        });
+        const { jobId } = JSON.parse(res.responseText);
+        let lastMsg = '';
+
+        while (!state.abort) {
+            await sleep(2000);
+            const st = await gmFetch(`${LOCAL_SERVER}/status/${jobId}`);
+            const job = JSON.parse(st.responseText);
+            if (job.message && job.message !== lastMsg) {
+                setProgress(job.message);
+                lastMsg = job.message;
+            }
+            if (job.state === 'done') {
+                setProgress(`✓ Listo: ${job.files} archivo(s)`);
+                setProgress(`Carpeta: ${job.outputDir}`);
+                return;
+            }
+            if (job.state === 'error') {
+                throw new Error(job.error || 'Error en yt-dlp');
+            }
+        }
+    }
+
     async function startOneClickDownload() {
         const playlistId = extractPlaylistId();
         if (!playlistId) {
@@ -1019,11 +1086,10 @@
             fab.textContent = 'Descargando…';
         }
 
-        const setProgress = showProgressPanel('Descargando playlist en MP3…');
+        const setProgress = showProgressPanel('Descargando MP3…');
 
         try {
-            await runBrowserDownload(playlistId, MP3_FORMAT, setProgress, setProgress);
-            setProgress('✓ Listo. Revisá tus descargas.');
+            await downloadViaLocalServer(setProgress);
         } catch (err) {
             setProgress(`Error: ${err.message}`);
         } finally {
@@ -1044,7 +1110,7 @@
         const btn = document.createElement('button');
         btn.id = 'ypldl-fab';
         btn.textContent = 'Descargar MP3';
-        btn.title = 'Un clic: descargar toda la playlist en MP3 con portada';
+        btn.title = 'Un clic: arranca el servidor y descarga MP3';
         btn.addEventListener('click', openDownloadPage);
         document.body.appendChild(btn);
     }
