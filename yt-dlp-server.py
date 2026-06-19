@@ -28,16 +28,34 @@ def yt_dlp_cmd(args: list[str]) -> list[str]:
     return [sys.executable, "-m", "yt_dlp", *args]
 
 
-def has_ffmpeg() -> bool:
-    try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            capture_output=True,
-            check=True,
+def ffmpeg_candidates() -> list[str]:
+    names = ["ffmpeg"]
+    if sys.platform == "win32":
+        local = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Links"
+        names.extend(
+            str(p)
+            for p in (
+                local / "ffmpeg.exe",
+                Path(r"C:\ffmpeg\bin\ffmpeg.exe"),
+                Path(r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"),
+            )
+            if p.exists()
         )
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
+    return names
+
+
+def has_ffmpeg() -> bool:
+    for cmd in ffmpeg_candidates():
+        try:
+            subprocess.run(
+                [cmd, "-version"],
+                capture_output=True,
+                check=True,
+            )
+            return True
+        except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+            continue
+    return False
 
 
 def count_files(output_dir: Path, ext: str) -> int:

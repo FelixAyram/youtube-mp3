@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Playlist Downloader (con portada)
 // @namespace    https://github.com/local/youtube-playlist-downloader
-// @version      2.5.1
+// @version      2.5.2
 // @description  Elegí formato, arranca el servidor local y descarga con progreso.
 // @author       You
 // @match        https://www.youtube.com/*
@@ -988,19 +988,20 @@
         }
     }
 
+    async function checkServerHealth() {
+        const res = await gmFetch(`${LOCAL_SERVER}/health`);
+        const health = JSON.parse(res.responseText);
+        if (!health.ffmpeg) {
+            throw new Error(
+                'ffmpeg no está instalado. Instalá: winget install Gyan.FFmpeg — después cerrá y volvé a abrir la terminal o reiniciá el PC.'
+            );
+        }
+        return health;
+    }
+
     async function ensureServer(setProgress) {
         if (await isServerUp()) {
-            try {
-                const res = await gmFetch(`${LOCAL_SERVER}/health`);
-                const health = JSON.parse(res.responseText);
-                if (!health.ffmpeg) {
-                    throw new Error(
-                        'ffmpeg no está instalado. Instalá: winget install Gyan.FFmpeg y reiniciá el servidor.'
-                    );
-                }
-            } catch (err) {
-                if (err.message.includes('ffmpeg')) throw err;
-            }
+            await checkServerHealth();
             return;
         }
 
@@ -1014,6 +1015,7 @@
         for (let i = 0; i < 20; i++) {
             await sleep(1500);
             if (await isServerUp()) {
+                await checkServerHealth();
                 setProgress('Servidor listo.');
                 return;
             }
