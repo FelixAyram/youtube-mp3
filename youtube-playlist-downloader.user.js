@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Playlist Downloader (con portada)
 // @namespace    https://github.com/local/youtube-playlist-downloader
-// @version      2.4.0
-// @description  Un clic: arranca el servidor local y descarga la playlist en MP3.
+// @version      2.5.0
+// @description  Elegí formato, arranca el servidor local y descarga con progreso.
 // @author       You
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -902,9 +902,8 @@
             <div id="ypldl-modal">
                 <h2>Descargar playlist</h2>
                 <p>
-                    Todo ocurre en tu navegador. Elige el formato; la portada se embebe en el archivo
-                    (excepto WAV, que guarda la imagen aparte).
-                    La primera descarga carga el conversor (~30 MB).
+                    Elegí el formato y tocá Descargar. El servidor local se inicia solo
+                    (yt-dlp + portada embebida). Los archivos van a Descargas / YouTube Playlists.
                 </p>
                 <div class="ypldl-formats">
                     ${FORMATS.map((f, i) => `
@@ -937,23 +936,24 @@
         const logLines = [];
         const setProgress = (msg) => {
             progressEl.style.display = 'block';
+            if (logLines.length && logLines[logLines.length - 1] === msg) return;
             logLines.push(msg);
             if (logLines.length > 80) logLines.shift();
             progressEl.textContent = logLines.join('\n');
             progressEl.scrollTop = progressEl.scrollHeight;
         };
 
-        const close = () => { state.abort = true; state.running = false; overlay.remove(); };
+        const close = () => {
+            state.abort = true;
+            state.running = false;
+            overlay.remove();
+            const fab = document.getElementById('ypldl-fab');
+            if (fab) { fab.disabled = false; fab.textContent = 'Descargar playlist'; }
+        };
         cancelBtn.addEventListener('click', close);
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
-        (async () => {
-            try {
-                await fetchFullPlaylist(extractPlaylistId(), setProgress);
-            } catch (err) {
-                setProgress(`Aviso: ${err.message}`);
-            }
-        })();
+        setProgress('Playlist detectada. Elegí formato y tocá Descargar.');
 
         startBtn.addEventListener('click', async () => {
             if (state.running) return;
@@ -963,47 +963,20 @@
             cancelBtn.textContent = 'Cerrar';
 
             const formatId = overlay.querySelector('input[name="ypldl-format"]:checked').value;
-            const formatConfig = FORMATS.find(f => f.id === formatId);
+            const fab = document.getElementById('ypldl-fab');
+            if (fab) { fab.disabled = true; fab.textContent = 'Descargando…'; }
 
             try {
-                await runBrowserDownload(extractPlaylistId(), formatConfig, setProgress, setProgress);
+                await downloadViaLocalServer(formatId, setProgress);
             } catch (err) {
                 setProgress(`Error: ${err.message}`);
             } finally {
                 state.running = false;
                 startBtn.disabled = false;
                 startBtn.textContent = 'Reintentar';
+                if (fab) { fab.disabled = false; fab.textContent = 'Descargar playlist'; }
             }
         });
-    }
-
-    function showProgressPanel(title) {
-        injectStyles();
-        let panel = document.getElementById('ypldl-panel');
-        if (!panel) {
-            panel = document.createElement('div');
-            panel.id = 'ypldl-panel';
-            panel.innerHTML = `
-                <button type="button" id="ypldl-panel-close">Cerrar</button>
-                <h3 id="ypldl-panel-title"></h3>
-                <div id="ypldl-panel-log"></div>`;
-            document.body.appendChild(panel);
-            panel.querySelector('#ypldl-panel-close').addEventListener('click', () => {
-                state.abort = true;
-                state.running = false;
-                panel.classList.remove('visible');
-                const fab = document.getElementById('ypldl-fab');
-                if (fab) { fab.disabled = false; fab.textContent = 'Descargar MP3'; }
-            });
-        }
-        panel.querySelector('#ypldl-panel-title').textContent = title;
-        panel.querySelector('#ypldl-panel-log').textContent = '';
-        panel.classList.add('visible');
-        return (msg) => {
-            const log = panel.querySelector('#ypldl-panel-log');
-            log.textContent += (log.textContent ? '\n' : '') + msg;
-            log.scrollTop = log.scrollHeight;
-        };
     }
 
     async function isServerUp() {
@@ -1038,14 +1011,14 @@
         );
     }
 
-    async function downloadViaLocalServer(setProgress) {
+    async function downloadViaLocalServer(format, setProgress) {
         await ensureServer(setProgress);
-        setProgress('Enviando playlist…');
+        setProgress(`Iniciando descarga en ${format.toUpperCase()}…`);
 
         const res = await gmFetch(`${LOCAL_SERVER}/download`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: location.href, format: 'mp3' }),
+            body: JSON.stringify({ url: location.href, format }),
         });
         const { jobId } = JSON.parse(res.responseText);
         let lastMsg = '';
@@ -1069,49 +1042,21 @@
         }
     }
 
-    async function startOneClickDownload() {
-        const playlistId = extractPlaylistId();
-        if (!playlistId) {
+    function openDownloadModal() {
+        if (!extractPlaylistId()) {
             alert('Abrí una playlist de YouTube (URL con ?list=...)');
             return;
         }
-        if (state.running) return;
-
-        state.running = true;
-        state.abort = false;
-
-        const fab = document.getElementById('ypldl-fab');
-        if (fab) {
-            fab.disabled = true;
-            fab.textContent = 'Descargando…';
-        }
-
-        const setProgress = showProgressPanel('Descargando MP3…');
-
-        try {
-            await downloadViaLocalServer(setProgress);
-        } catch (err) {
-            setProgress(`Error: ${err.message}`);
-        } finally {
-            state.running = false;
-            if (fab) {
-                fab.disabled = false;
-                fab.textContent = 'Descargar MP3';
-            }
-        }
-    }
-
-    function openDownloadPage() {
-        startOneClickDownload();
+        createModal();
     }
 
     function addFloatingButton() {
         if (document.getElementById('ypldl-fab')) return;
         const btn = document.createElement('button');
         btn.id = 'ypldl-fab';
-        btn.textContent = 'Descargar MP3';
-        btn.title = 'Un clic: arranca el servidor y descarga MP3';
-        btn.addEventListener('click', openDownloadPage);
+        btn.textContent = 'Descargar playlist';
+        btn.title = 'Elegir formato y descargar con progreso';
+        btn.addEventListener('click', openDownloadModal);
         document.body.appendChild(btn);
     }
 
@@ -1121,11 +1066,7 @@
         addFloatingButton();
     }
 
-    GM_registerMenuCommand('Descargar MP3 (un clic)', startOneClickDownload);
-    GM_registerMenuCommand('Elegir formato…', () => {
-        if (!extractPlaylistId()) { alert('No estas en una pagina de playlist.'); return; }
-        createModal();
-    });
+    GM_registerMenuCommand('Descargar playlist', openDownloadModal);
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();
