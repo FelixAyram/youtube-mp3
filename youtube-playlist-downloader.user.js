@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Playlist Downloader (con portada)
 // @namespace    https://github.com/local/youtube-playlist-downloader
-// @version      2.2.0
-// @description  Abre la pagina de descarga MP3 en GitHub Actions (servidor en la nube).
+// @version      2.3.0
+// @description  Un clic: descarga la playlist en MP3 con portada, directo en YouTube.
 // @author       You
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -27,8 +27,6 @@
 
     const API_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
     const CIPHER_API = 'https://cipher.kikkia.dev';
-    const DOWNLOAD_PAGE = 'https://felixayram.github.io/youtube-mp3/';
-
     const FORMATS = [
         { id: 'mp3', label: 'MP3 (audio, recomendado)', type: 'audio', ext: 'mp3' },
         { id: 'm4a', label: 'M4A / AAC (audio nativo)', type: 'audio', ext: 'm4a' },
@@ -38,6 +36,7 @@
         { id: 'mp4', label: 'MP4 (video + audio)', type: 'video', ext: 'mp4' },
         { id: 'webm', label: 'WEBM (video + audio)', type: 'video', ext: 'webm' },
     ];
+    const MP3_FORMAT = FORMATS[0];
 
     const state = { running: false, abort: false, playlistCache: null };
     let playerJsUrlCache = null;
@@ -875,6 +874,18 @@
                 padding:12px 20px; font-weight:700; cursor:pointer;
                 box-shadow:0 4px 20px rgba(255,0,51,.45); font-family:Roboto,Arial,sans-serif; font-size:14px; }
             #ypldl-fab:hover { filter:brightness(1.08); }
+            #ypldl-fab:disabled { opacity:.55; cursor:not-allowed; }
+            #ypldl-panel { position:fixed; bottom:80px; right:24px; z-index:999998;
+                width:min(360px,92vw); background:#212121; color:#f1f1f1; border-radius:12px;
+                box-shadow:0 8px 32px rgba(0,0,0,.55); padding:14px 16px; display:none;
+                font-family:Roboto,Arial,sans-serif; }
+            #ypldl-panel.visible { display:block; }
+            #ypldl-panel h3 { margin:0 0 8px; font-size:14px; }
+            #ypldl-panel-log { background:#111; border-radius:8px; padding:10px; font-size:11px;
+                line-height:1.5; max-height:140px; overflow-y:auto; white-space:pre-wrap;
+                word-break:break-word; margin-bottom:10px; }
+            #ypldl-panel-close { background:#3a3a3a; color:#f1f1f1; border:none;
+                border-radius:999px; padding:6px 14px; font-size:12px; cursor:pointer; float:right; }
         `;
         document.head.appendChild(style);
     }
@@ -962,14 +973,70 @@
         });
     }
 
-    function openDownloadPage() {
+    function showProgressPanel(title) {
+        injectStyles();
+        let panel = document.getElementById('ypldl-panel');
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'ypldl-panel';
+            panel.innerHTML = `
+                <button type="button" id="ypldl-panel-close">Cerrar</button>
+                <h3 id="ypldl-panel-title"></h3>
+                <div id="ypldl-panel-log"></div>`;
+            document.body.appendChild(panel);
+            panel.querySelector('#ypldl-panel-close').addEventListener('click', () => {
+                state.abort = true;
+                state.running = false;
+                panel.classList.remove('visible');
+                const fab = document.getElementById('ypldl-fab');
+                if (fab) { fab.disabled = false; fab.textContent = 'Descargar MP3'; }
+            });
+        }
+        panel.querySelector('#ypldl-panel-title').textContent = title;
+        panel.querySelector('#ypldl-panel-log').textContent = '';
+        panel.classList.add('visible');
+        return (msg) => {
+            const log = panel.querySelector('#ypldl-panel-log');
+            log.textContent += (log.textContent ? '\n' : '') + msg;
+            log.scrollTop = log.scrollHeight;
+        };
+    }
+
+    async function startOneClickDownload() {
         const playlistId = extractPlaylistId();
         if (!playlistId) {
             alert('Abrí una playlist de YouTube (URL con ?list=...)');
             return;
         }
-        const url = `${DOWNLOAD_PAGE}?url=${encodeURIComponent(location.href)}&autostart=1`;
-        window.open(url, '_blank', 'noopener');
+        if (state.running) return;
+
+        state.running = true;
+        state.abort = false;
+
+        const fab = document.getElementById('ypldl-fab');
+        if (fab) {
+            fab.disabled = true;
+            fab.textContent = 'Descargando…';
+        }
+
+        const setProgress = showProgressPanel('Descargando playlist en MP3…');
+
+        try {
+            await runBrowserDownload(playlistId, MP3_FORMAT, setProgress, setProgress);
+            setProgress('✓ Listo. Revisá tus descargas.');
+        } catch (err) {
+            setProgress(`Error: ${err.message}`);
+        } finally {
+            state.running = false;
+            if (fab) {
+                fab.disabled = false;
+                fab.textContent = 'Descargar MP3';
+            }
+        }
+    }
+
+    function openDownloadPage() {
+        startOneClickDownload();
     }
 
     function addFloatingButton() {
@@ -977,7 +1044,7 @@
         const btn = document.createElement('button');
         btn.id = 'ypldl-fab';
         btn.textContent = 'Descargar MP3';
-        btn.title = 'Descargar MP3 en GitHub Actions (servidor en la nube)';
+        btn.title = 'Un clic: descargar toda la playlist en MP3 con portada';
         btn.addEventListener('click', openDownloadPage);
         document.body.appendChild(btn);
     }
@@ -988,8 +1055,8 @@
         addFloatingButton();
     }
 
-    GM_registerMenuCommand('Descargar playlist (MP3)', openDownloadPage);
-    GM_registerMenuCommand('Descargar en el navegador (avanzado)', () => {
+    GM_registerMenuCommand('Descargar MP3 (un clic)', startOneClickDownload);
+    GM_registerMenuCommand('Elegir formato…', () => {
         if (!extractPlaylistId()) { alert('No estas en una pagina de playlist.'); return; }
         createModal();
     });
