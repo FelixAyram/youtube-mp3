@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Playlist Downloader (con portada)
 // @namespace    https://github.com/local/youtube-playlist-downloader
-// @version      2.1.0
-// @description  Abre la pagina de descarga MP3 en GitHub (yt-dlp local) desde playlists de YouTube.
+// @version      2.2.0
+// @description  Abre la pagina de descarga MP3 en GitHub Actions (servidor en la nube).
 // @author       You
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -977,7 +977,7 @@
         const btn = document.createElement('button');
         btn.id = 'ypldl-fab';
         btn.textContent = 'Descargar MP3';
-        btn.title = 'Abrir pagina de descarga MP3 (GitHub + yt-dlp local)';
+        btn.title = 'Descargar MP3 en GitHub Actions (servidor en la nube)';
         btn.addEventListener('click', openDownloadPage);
         document.body.appendChild(btn);
     }

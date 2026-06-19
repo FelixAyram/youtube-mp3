@@ -17,7 +17,6 @@
       --text: #f1f1f1;
       --muted: #aaa;
       --red: #ff0033;
-      --red-hover: #cc0029;
       --green: #2ecc71;
     }
 
@@ -29,30 +28,26 @@
       line-height: 1.5;
     }
 
-    .wrap {
-      max-width: 560px;
-      margin: 0 auto;
-      padding: 32px 20px 48px;
-    }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 32px 20px 48px; }
 
-    header {
-      text-align: center;
-      margin-bottom: 28px;
-    }
+    header { text-align: center; margin-bottom: 28px; }
+    header .logo { font-size: 2.5rem; margin-bottom: 8px; }
+    header h1 { font-size: 1.5rem; margin-bottom: 6px; }
+    header p { color: var(--muted); font-size: 0.9rem; }
 
-    header .logo {
-      font-size: 2.5rem;
-      margin-bottom: 8px;
-    }
-
-    header h1 {
-      font-size: 1.5rem;
-      margin-bottom: 6px;
-    }
-
-    header p {
-      color: var(--muted);
-      font-size: 0.9rem;
+    .badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      margin-bottom: 20px;
+      border-radius: 12px;
+      background: rgba(46, 204, 113, 0.1);
+      border: 1px solid rgba(46, 204, 113, 0.3);
+      color: var(--green);
+      font-size: 0.84rem;
+      font-weight: 600;
     }
 
     .card {
@@ -77,17 +72,51 @@
       padding: 12px 14px;
       font-size: 0.82rem;
       word-break: break-all;
-      color: var(--text);
       min-height: 2.5em;
     }
 
     .url-box.empty { color: var(--muted); font-style: italic; }
 
-    .formats {
+    .steps {
       display: grid;
-      gap: 8px;
-      margin-bottom: 16px;
+      gap: 12px;
+      margin-bottom: 20px;
     }
+
+    .step {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--surface2);
+      display: grid;
+      place-items: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .step.active .step-num {
+      background: rgba(255, 0, 51, 0.2);
+      color: var(--red);
+      box-shadow: 0 0 12px rgba(255, 0, 51, 0.35);
+    }
+
+    .step.done .step-num {
+      background: rgba(46, 204, 113, 0.2);
+      color: var(--green);
+    }
+
+    .step-text strong { display: block; font-size: 0.9rem; margin-bottom: 2px; }
+    .step-text span { font-size: 0.82rem; color: var(--muted); }
+
+    .formats { display: grid; gap: 8px; margin-bottom: 16px; }
 
     .format {
       display: flex;
@@ -98,123 +127,43 @@
       border: 2px solid transparent;
       border-radius: 10px;
       cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
     }
 
     .format:hover { background: #3a3a3a; }
     .format.selected { border-color: var(--red); background: #3a2028; }
     .format input { accent-color: var(--red); }
 
-    .status {
-      background: #111;
-      border-radius: 10px;
-      padding: 14px;
-      font-size: 0.8rem;
-      line-height: 1.65;
-      max-height: 220px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: #ccc;
-      display: none;
-    }
-
-    .status.visible { display: block; }
-
-    .status.ok { border-left: 3px solid var(--green); }
-    .status.err { border-left: 3px solid var(--red); }
-    .status.run { border-left: 3px solid #f59e0b; }
-
-    .server-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      margin-bottom: 16px;
-    }
-
-    .server-badge.offline {
-      background: rgba(255, 0, 51, 0.15);
-      color: #ff6b6b;
-    }
-
-    .server-badge.online {
-      background: rgba(46, 204, 113, 0.15);
-      color: var(--green);
-    }
-
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-
-    .server-badge.online .dot { animation: pulse 1.5s ease infinite; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    .help {
-      font-size: 0.82rem;
-      color: var(--muted);
-      line-height: 1.55;
-    }
-
-    .help code {
-      background: #111;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.78rem;
-    }
-
-    .help ol {
-      margin: 10px 0 0 18px;
-    }
-
-    .help li { margin-bottom: 6px; }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
     .btn {
-      flex: 1;
-      min-width: 140px;
+      display: block;
+      width: 100%;
       border: none;
       border-radius: 999px;
-      padding: 14px 22px;
+      padding: 15px 22px;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 1rem;
       cursor: pointer;
-      transition: filter 0.15s, opacity 0.15s;
+      text-align: center;
+      text-decoration: none;
+      transition: filter 0.15s;
     }
 
-    .btn-primary {
-      background: var(--red);
-      color: #fff;
-    }
-
-    .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
-
-    .btn-primary:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
+    .btn-primary { background: var(--red); color: #fff; margin-bottom: 10px; }
+    .btn-primary:hover { filter: brightness(1.08); }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .btn-secondary {
       background: var(--surface2);
       color: var(--text);
+      font-size: 0.88rem;
+      padding: 12px;
     }
 
-    .btn-secondary:hover { background: #3a3a3a; }
+    .note {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.55;
+      margin-top: 12px;
+    }
 
     footer {
       margin-top: 24px;
@@ -229,17 +178,14 @@
     <header>
       <div class="logo" aria-hidden="true">🎵</div>
       <h1>YouTube Playlist → MP3</h1>
-      <p>Descargá playlists con portada embebida usando yt-dlp en tu PC.</p>
+      <p>La descarga corre en los servidores de GitHub. No instalás nada en tu PC.</p>
     </header>
 
-    <div id="server-badge" class="server-badge offline">
-      <span class="dot"></span>
-      <span id="server-text">Comprobando servidor local…</span>
-    </div>
+    <div class="badge">☁️ Procesamiento en GitHub Actions</div>
 
     <section class="card">
       <h2>Playlist</h2>
-      <div id="url-box" class="url-box empty">Sin URL — abrí esta página desde YouTube con el script de Tampermonkey.</div>
+      <div id="url-box" class="url-box empty">Sin URL</div>
     </section>
 
     <section class="card">
@@ -247,7 +193,7 @@
       <div class="formats" id="formats">
         <label class="format selected">
           <input type="radio" name="format" value="mp3" checked />
-          <span>MP3 (320k + portada embebida)</span>
+          <span>MP3 (con portada embebida)</span>
         </label>
         <label class="format">
           <input type="radio" name="format" value="m4a" />
@@ -255,31 +201,52 @@
         </label>
         <label class="format">
           <input type="radio" name="format" value="flac" />
-          <span>FLAC (sin pérdida)</span>
+          <span>FLAC</span>
         </label>
       </div>
+    </section>
 
-      <div class="actions">
-        <button type="button" class="btn btn-primary" id="btn-download" disabled>Descargar MP3</button>
-        <button type="button" class="btn btn-secondary" id="btn-recheck">Reintentar conexión</button>
+    <section class="card">
+      <h2>Pasos</h2>
+      <div class="steps">
+        <div class="step active" id="step-1">
+          <span class="step-num">1</span>
+          <div class="step-text">
+            <strong>Iniciar descarga</strong>
+            <span>Se abre GitHub para confirmar (necesitás estar logueado).</span>
+          </div>
+        </div>
+        <div class="step" id="step-2">
+          <span class="step-num">2</span>
+          <div class="step-text">
+            <strong>Esperar en GitHub Actions</strong>
+            <span>GitHub descarga y convierte la playlist (~2–10 min).</span>
+          </div>
+        </div>
+        <div class="step" id="step-3">
+          <span class="step-num">3</span>
+          <div class="step-text">
+            <strong>Descargar el ZIP</strong>
+            <span>En el run de Actions, sección Artifacts → descargá el .zip.</span>
+          </div>
+        </div>
       </div>
+
+      <a id="btn-download" class="btn btn-primary" href="#" target="_blank" rel="noopener">
+        Descargar MP3 en GitHub
+      </a>
+      <a id="btn-runs" class="btn btn-secondary" href="https://github.com/FelixAyram/youtube-mp3/actions/workflows/download-playlist.yml" target="_blank" rel="noopener">
+        Ver descargas en curso
+      </a>
+      <p class="note">
+        Al hacer clic se abre GitHub para confirmar la descarga. GitHub procesa todo en la nube
+        y te avisa por comentario cuando el ZIP esté listo.
+      </p>
     </section>
 
-    <pre id="status" class="status" role="log"></pre>
-
-    <section class="card help" id="help-offline" hidden>
-      <h2>Servidor no detectado</h2>
-      <p>Para descargar MP3 necesitás el servidor local en tu PC:</p>
-      <ol>
-        <li>Instalá <code>yt-dlp</code> y <code>ffmpeg</code> (si no los tenés).</li>
-        <li>Ejecutá <code>iniciar-servidor.bat</code> en la carpeta del proyecto.</li>
-        <li>Dejá esa ventana abierta y volvé acá.</li>
-      </ol>
-    </section>
-
-    <footer>Los archivos se guardan en Descargas / YouTube Playlists</footer>
+    <footer>Los archivos se guardan 7 días como artefacto de GitHub Actions</footer>
   </div>
 
-  <script type="module" src="js/app.js?v=1"></script>
+  <script type="module" src="js/app.js?v=2"></script>
 </body>
 </html>
